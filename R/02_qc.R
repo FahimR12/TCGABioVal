@@ -97,11 +97,18 @@ flag_outliers <- function(qc_metrics, qc_config) {
   k <- qc_config$mad_threshold
   thresholds <- list()
 
+  # Map config metric names to actual data.frame column names.
+  # Config uses "library_size" (descriptive); data.frame uses "lib_size" (short).
+  col_name_map <- c(library_size = "lib_size",
+                    pct_mito     = "pct_mito",
+                    n_detected   = "n_detected")
+
   for (metric_name in names(qc_config$metrics)) {
     metric_cfg <- qc_config$metrics[[metric_name]]
     if (!isTRUE(metric_cfg$enabled)) next
 
-    values <- qc_metrics[[metric_name]]
+    col_name <- col_name_map[[metric_name]] %||% metric_name
+    values <- qc_metrics[[col_name]]
     if (all(is.na(values))) {
       log_warn("Skipping ", metric_name, " — all values are NA")
       qc_metrics[[paste0("flag_", metric_name)]] <- FALSE

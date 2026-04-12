@@ -18,8 +18,30 @@ paths:
   results_dir:   "results"
   reference_dir: "data/reference"
 
+  # Optional: path to a clinical TSV/CSV that maps TCGA barcodes to metadata
+  # (sample_type, IDH status, etc.). If null, the pipeline will search GDCdata.
+  # Point this to an existing clinical file from BNPipeline, e.g.:
+  #   "C:/Users/fahim/Desktop/scripts/BNPipeline/data/clinical_gbm.tsv"
+  # or use TCGAbiolinks to fetch it:
+  #   TCGAbiolinks::GDCquery_clinic("TCGA-GBM", type="clinical") |> write.csv(...)
+  clinical_tsv: null
+
+  # Optional: path to a UUID-to-barcode mapping file (GDC manifest or sample sheet).
+  # If null, the pipeline will try to extract barcodes from filenames.
+  # The manifest is usually at: GDCdata/MANIFEST.txt or similar.
+  uuid_barcode_map: null
+
 # ---------------------------------------------------------------------------
-# 2. Cohort Selection
+# 2. Ingestion Settings
+# ---------------------------------------------------------------------------
+ingest:
+  # Set true to skip Approach 2 (TCGAbiolinks GDCprepare), which requires
+  # network access to the GDC API. Approach 3 (raw file reading) is used
+  # instead. Saves ~6 minutes of timeout waiting when offline.
+  skip_network_approaches: true
+
+# ---------------------------------------------------------------------------
+# 3. Cohort Selection
 # ---------------------------------------------------------------------------
 cohort:
   # Which TCGA project to analyse in this run
@@ -167,7 +189,7 @@ bn_learn:
 
   # Stability assessment
   stability:
-    n_bootstrap: 200       # Bootstrap resamples for edge confidence
+    n_bootstrap: 50        # Bootstrap resamples (increase to 200+ for final run)
     edge_threshold: 0.5    # Minimum bootstrap frequency to keep an edge
 
 # ---------------------------------------------------------------------------
