@@ -36,7 +36,13 @@ load_config <- function(config_path = NULL) {
   cfg
 }
 
-#' Minimal validation — check required top-level keys exist
+#' Minimal validation — check required top-level keys exist.
+#' Also applies environment variable overrides so that the same config.yml
+#' works on both Windows (dev) and Barkla HPC without modification.
+#'
+#' Supported env vars (set in sbatch or shell):
+#'   TCGABIOVAL_GDCDATA_ROOT   — override paths.gdcdata_root
+#'   TCGABIOVAL_CLINICAL_TSV   — override paths.clinical_tsv
 validate_config <- function(cfg) {
   required_keys <- c("paths", "cohort", "qc", "normalisation",
                      "clinical", "feature_selection", "bn_learn")
@@ -45,11 +51,25 @@ validate_config <- function(cfg) {
     stop("Config is missing required sections: ",
          paste(missing, collapse = ", "))
   }
+
+  # Environment variable overrides (HPC / CI friendliness)
+  env_gdc <- Sys.getenv("TCGABIOVAL_GDCDATA_ROOT", unset = "")
+  if (nchar(env_gdc) > 0) {
+    message("[config] TCGABIOVAL_GDCDATA_ROOT override: ", env_gdc)
+    cfg$paths$gdcdata_root <- env_gdc
+  }
+  env_clin <- Sys.getenv("TCGABIOVAL_CLINICAL_TSV", unset = "")
+  if (nchar(env_clin) > 0) {
+    message("[config] TCGABIOVAL_CLINICAL_TSV override: ", env_clin)
+    cfg$paths$clinical_tsv <- env_clin
+  }
+
   # Validate GDCdata root exists
   gdc_root <- cfg$paths$gdcdata_root
   if (!dir.exists(gdc_root)) {
     warning("GDCdata root does not exist: ", gdc_root,
-            "\n  Update paths.gdcdata_root in config.yml")
+            "\n  Update paths.gdcdata_root in config.yml",
+            "\n  or set TCGABIOVAL_GDCDATA_ROOT env var")
   }
   invisible(cfg)
 }
