@@ -1,0 +1,37 @@
+# =============================================================================
+# TCGABioVal .gitignore
+# =============================================================================
+
+# --- Data (large / derived / sensitive) ---
+data/processed/
+data/reference/*.rds
+*.rds
+!data/reference/*.csv
+
+# --- Results (regenerable) ---
+results/
+
+# --- R ---
+.Rhistory
+.Rdata
+.RData
+.Rproj.user/
+*.Rproj
+.Renviron
+renv/library/
+renv/staging/
+renv/python/
+
+# --- OS ---
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# --- IDE ---
+.vscode/
+.idea/
+
+# --- Temporary ---
+*.tmp
+*.bak
+*~

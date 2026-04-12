@@ -1,0 +1,183 @@
+# =============================================================================
+# TCGABioVal Pipeline Configuration
+# =============================================================================
+# All paths, thresholds, and parameters in one place.
+# Edit this file — never hard-code values in R scripts.
+# =============================================================================
+
+# ---------------------------------------------------------------------------
+# 1. Data Paths
+# ---------------------------------------------------------------------------
+paths:
+  # Root of the existing GDCdata download (BNPipeline repo).
+  # Contains TCGA-GBM/, TCGA-OV/, TCGA-BRCA/ subdirectories.
+  gdcdata_root: "C:/Users/fahim/Desktop/scripts/BNPipeline/GDCdata"
+
+  # Where this pipeline writes processed outputs
+  processed_dir: "data/processed"
+  results_dir:   "results"
+  reference_dir: "data/reference"
+
+# ---------------------------------------------------------------------------
+# 2. Cohort Selection
+# ---------------------------------------------------------------------------
+cohort:
+  # Which TCGA project to analyse in this run
+  project: "TCGA-GBM"
+
+  # Sample type filter — keep only primary tumours
+  sample_types: ["Primary Tumor"]
+
+# ---------------------------------------------------------------------------
+# 3. Sample QC  (MAD-based outlier flagging)
+# ---------------------------------------------------------------------------
+qc:
+  # Number of MADs from the median to flag a sample as an outlier.
+  # Samples are flagged, NOT auto-dropped.
+  mad_threshold: 3
+
+  # Metrics to evaluate (each gets its own flag column)
+  metrics:
+    library_size:
+      enabled: true
+      direction: "lower"   # flag samples BELOW median - k*MAD
+    pct_mito:
+      enabled: true
+      direction: "upper"   # flag samples ABOVE median + k*MAD
+    n_detected:
+      enabled: true
+      direction: "lower"
+
+  # Previous empirical thresholds for TCGA-GBM (243 samples, 3-MAD):
+  #   library_size < 33.7M
+  #   pct_mito     > 7.7%
+  #   n_detected   < 27,600
+  # These are DERIVED, not inputs — the pipeline recomputes them from data.
+
+# ---------------------------------------------------------------------------
+# 4. Normalisation
+# ---------------------------------------------------------------------------
+normalisation:
+  # Method for expression normalisation
+  method: "TMM"            # edgeR's TMM (alternatives: "RLE", "upperquartile")
+
+  # Transform after normalisation
+  transform: "logCPM"      # log2 counts-per-million via edgeR::cpm(log=TRUE)
+
+  # Gene filtering before normalisation
+  gene_filter:
+    # Keep genes expressed in at least this fraction of samples
+    min_sample_fraction: 0.2
+    # Minimum CPM to count as "expressed"
+    min_cpm: 1
+
+# ---------------------------------------------------------------------------
+# 5. Clinical Covariates
+# ---------------------------------------------------------------------------
+clinical:
+  # Covariates to extract and merge into sample metadata.
+  # Each entry defines a target column name and how to find/parse it.
+  covariates:
+    idh_status:
+      # Column name priority cascade — try these in order
+      source_columns:
+        - "paper_IDH.status"
+        - "subtype_IDH.status"
+        - "paper_IDH_status"
+        - "IDH.status"
+      # Normalisation rules
+      mutant_patterns:   ["^mut", "^idh.?mut"]   # case-insensitive
+      wildtype_patterns: ["^wt", "^wild", "^idh.?wt"]
+      # Guard: patterns that look like mutant but are NOT
+      exclude_patterns:  ["unmut", "non.?mut"]
+      # NA handling: distinguish untested from confirmed wildtype
+      # In older TCGA-GBM, missing IDH ≠ wildtype (predates routine testing)
+      treat_na_as_unknown: true
+
+# ---------------------------------------------------------------------------
+# 6. Feature Selection (for BN input)
+# ---------------------------------------------------------------------------
+feature_selection:
+  # Maximum number of genes to pass into BN learning
+  max_genes: 200
+
+  # Strategy: "variance" selects top-variance genes, then intersects with
+  # the EGFR reference gene set to ensure pathway coverage
+  strategy: "variance_plus_pathway"
+
+  # Top-N by variance (before pathway augmentation)
+  top_variance_n: 150
+
+  # EGFR reference gene set — these are ALWAYS included if they pass
+  # basic expression filtering, regardless of variance rank
+  egfr_reference_genes:
+    # Core EGFR / ERBB family
+    - EGFR
+    - ERBB2
+    - ERBB3
+    - ERBB4
+    # Adaptor proteins
+    - GRB2
+    - SHC1
+    - SOS1
+    - GAB1
+    # RAS/MAPK cascade
+    - KRAS
+    - NRAS
+    - HRAS
+    - BRAF
+    - RAF1
+    - MAP2K1
+    - MAP2K2
+    - MAPK1
+    - MAPK3
+    # PI3K/AKT/mTOR
+    - PIK3CA
+    - PIK3R1
+    - AKT1
+    - AKT2
+    - MTOR
+    - PTEN
+    # STAT signalling
+    - STAT3
+    - STAT5A
+    - STAT5B
+    - JAK2
+    # GBM-relevant regulators
+    - NF1
+    - TP53
+    - MDM2
+    - MDM4
+    - RB1
+    - CDK4
+    - CDKN2A
+    - PDGFRA
+    - MET
+    - IDH1
+
+# ---------------------------------------------------------------------------
+# 7. Bayesian Network Learning — bnlearn (Phase 1 method)
+# ---------------------------------------------------------------------------
+bn_learn:
+  algorithm: "hc"          # Hill Climbing (alternatives: "tabu", "mmhc")
+  score: "bic-g"           # Gaussian BIC (continuous data)
+  restart: 50              # Number of random restarts
+  perturb: 5               # Edges to perturb per restart
+  max_iter: 5000           # Max iterations per restart
+
+  # Stability assessment
+  stability:
+    n_bootstrap: 200       # Bootstrap resamples for edge confidence
+    edge_threshold: 0.5    # Minimum bootstrap frequency to keep an edge
+
+# ---------------------------------------------------------------------------
+# 8. Validation
+# ---------------------------------------------------------------------------
+validation:
+  # EGFR-centred local graph extraction
+  egfr_neighbourhood:
+    hops: 1                # 1-hop = parents + children of EGFR
+  # Enrichment databases
+  enrichment:
+    - "Reactome"
+    - "GO_BP"              # Gene Ontology Biological Process
