@@ -95,7 +95,7 @@ if [[ -n "${ONLY_STAGE:-}" ]]; then
   echo "[pipeline] mode: single stage ${ONLY_STAGE}"
 elif [[ -n "${FROM_STAGE:-}" ]]; then
   # Build stage list from FROM_STAGE to 05
-  all_stages=(01 02 03 04 05)
+  all_stages=(01 02 03 04 05 06 07)
   STAGES=""
   in_range=0
   for s in "${all_stages[@]}"; do
@@ -211,8 +211,10 @@ declare -A STAGE_LABELS
 STAGE_LABELS[01]="Ingest STAR count files"
 STAGE_LABELS[02]="Sample QC (MAD-based flagging)"
 STAGE_LABELS[03]="Normalise + IDH covariate"
-STAGE_LABELS[04]="Feature selection (variance + EGFR)"
-STAGE_LABELS[05]="BN learning — bnlearn Hill Climbing + bootstrap"
+STAGE_LABELS[04]="Feature selection + CSV export for SMC"
+STAGE_LABELS[05]="BN learning — bnlearn (HC + Tabu + MMHC)"
+STAGE_LABELS[06]="BN learning — pcalg (PC + GES)"
+STAGE_LABELS[07]="Importance network — GENIE3"
 
 # =============================================================================
 # Run selected stages
