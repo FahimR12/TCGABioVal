@@ -236,8 +236,11 @@ export_bn_csv <- function(expr_selected, gene_meta, cfg) {
     mapped_symbols <- rownames(expr_selected)
   }
 
-  # Make column names safe (no duplicates, no spaces)
-  col_names <- make.unique(mapped_symbols, sep = "_")
+  # Prefix RNA features for downstream modality-aware pipelines.
+  # Keep names stable by applying prefix before duplicate disambiguation.
+  prefixed_symbols <- ifelse(grepl("^rna_", mapped_symbols), mapped_symbols,
+                             paste0("rna_", mapped_symbols))
+  col_names <- make.unique(prefixed_symbols, sep = "_")
 
   # -------------------------------------------------------------------------
   # Step 2: Transpose to samples × genes and write CSV

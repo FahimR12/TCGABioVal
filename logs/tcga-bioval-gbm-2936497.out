@@ -136,3 +136,10 @@
 
 [pipeline] ── Stage 05: BN learning — bnlearn Hill Climbing + bootstrap ────────────────────────────────────────
 [pipeline] start: 2026-04-13 08:46:21
+[pipeline] done:  Stage 05 in 98m14s
+
+[pipeline] ════════════════════════════════════════════════════════
+[pipeline] Pipeline complete — 98m14s
+[pipeline] Run ID: 20260413_084556
+[pipeline] Outputs: data/processed/ and results/
+[pipeline] ════════════════════════════════════════════════════════

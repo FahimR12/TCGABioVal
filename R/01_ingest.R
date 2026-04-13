@@ -455,6 +455,7 @@ resolve_uuids_via_gdc_api <- function(uuids) {
     httr::POST(
       "https://api.gdc.cancer.gov/files",
       httr::content_type_json(),
+      httr::add_headers(Accept = "application/json"),
       body    = jsonlite::toJSON(body, auto_unbox = TRUE),
       httr::timeout(45)
     )
@@ -486,19 +487,91 @@ resolve_uuids_via_gdc_api <- function(uuids) {
     return(NULL)
   }
 
-  # cases.submitter_id is a list column when >1 case per file (rare for GBM)
-  file_ids <- hits$file_id
-  case_ids <- if ("cases.submitter_id" %in% colnames(hits)) {
-    vapply(hits$cases.submitter_id, function(x) {
+  # Depending on API response shape, submitter IDs may appear as:
+  #   - hits$cases.submitter_id (flattened)
+  #   - hits$cases[[i]]$submitter_id (nested list-column)
+  file_ids <- if ("file_id" %in% colnames(hits)) hits$file_id else hits$id
+  case_ids <- rep(NA_character_, length(file_ids))
+
+  if ("cases.submitter_id" %in% colnames(hits)) {
+    case_ids <- vapply(hits$cases.submitter_id, function(x) {
       if (is.null(x) || length(x) == 0) NA_character_
       else as.character(x[[1]][1])
     }, character(1))
-  } else {
-    rep(NA_character_, nrow(hits))
+  } else if ("cases" %in% colnames(hits)) {
+    case_ids <- vapply(hits$cases, function(x) {
+      if (is.null(x) || nrow(x) == 0 || !("submitter_id" %in% colnames(x))) {
+        NA_character_
+      } else {
+        as.character(x$submitter_id[1])
+      }
+    }, character(1))
   }
 
   lookup <- setNames(case_ids, file_ids)
   lookup
+}
+
+#' Path to UUID -> TCGA barcode cache (persisted across runs)
+uuid_barcode_cache_path <- function(cfg = NULL) {
+  if (!is.null(cfg)) {
+    return(processed_path(cfg, "01_uuid_barcode_cache.csv"))
+  }
+  file.path("data", "processed", "01_uuid_barcode_cache.csv")
+}
+
+#' Load UUID -> barcode cache from disk
+#' @return named character vector: uuid -> barcode
+load_uuid_barcode_cache <- function(cfg = NULL) {
+  cache_path <- uuid_barcode_cache_path(cfg)
+  if (!file.exists(cache_path)) return(character(0))
+
+  cache_df <- tryCatch(
+    read.csv(cache_path, stringsAsFactors = FALSE),
+    error = function(e) {
+      log_warn("  Failed to read UUID cache: ", conditionMessage(e))
+      NULL
+    }
+  )
+  if (is.null(cache_df)) return(character(0))
+
+  required_cols <- c("uuid", "barcode")
+  if (!all(required_cols %in% colnames(cache_df))) {
+    log_warn("  UUID cache missing required columns (uuid, barcode): ", cache_path)
+    return(character(0))
+  }
+
+  cache_df <- cache_df[!is.na(cache_df$uuid) & !is.na(cache_df$barcode), , drop = FALSE]
+  cache_df <- cache_df[nzchar(cache_df$uuid) & nzchar(cache_df$barcode), , drop = FALSE]
+  if (nrow(cache_df) == 0) return(character(0))
+
+  # Keep first entry per UUID (stable for repeated runs)
+  cache_df <- cache_df[!duplicated(cache_df$uuid), , drop = FALSE]
+  setNames(cache_df$barcode, cache_df$uuid)
+}
+
+#' Save/merge UUID -> barcode cache to disk
+save_uuid_barcode_cache <- function(new_map, cfg = NULL) {
+  if (is.null(new_map) || length(new_map) == 0) return(invisible(NULL))
+
+  cache_path <- uuid_barcode_cache_path(cfg)
+  dir.create(dirname(cache_path), recursive = TRUE, showWarnings = FALSE)
+
+  existing <- load_uuid_barcode_cache(cfg)
+  merged <- c(existing, new_map)
+  merged <- merged[!is.na(names(merged)) & nzchar(names(merged))]
+  merged <- merged[!is.na(merged) & nzchar(merged)]
+  merged <- merged[!duplicated(names(merged))]
+
+  out_df <- data.frame(
+    uuid = names(merged),
+    barcode = unname(merged),
+    stringsAsFactors = FALSE
+  )
+  out_df <- out_df[order(out_df$uuid), , drop = FALSE]
+
+  write.csv(out_df, cache_path, row.names = FALSE)
+  log_info("  Updated UUID cache: ", basename(cache_path), " (", nrow(out_df), " entries)")
 }
 
 #' Augment the minimal clinical stub (uuid + file_path) with real TCGA metadata.
@@ -534,14 +607,41 @@ augment_clinical <- function(result, cohort_dir, gdc_root, cfg = NULL) {
              nrow(clinical), " samples")
     clinical$barcode <- ifelse(nchar(barcode_match) > 0, barcode_match, NA_character_)
   } else {
-    log_info("No TCGA barcodes in filenames — trying GDC API UUID resolution")
+    log_info("No TCGA barcodes in filenames — using UUID cache then GDC API")
     clinical$barcode <- NA_character_
-    # Attempt to resolve file UUIDs to TCGA barcodes via the GDC REST API
-    gdc_map <- resolve_uuids_via_gdc_api(clinical$uuid)
-    if (!is.null(gdc_map)) {
-      clinical$barcode <- gdc_map[clinical$uuid]
-      n_barcodes <- sum(!is.na(clinical$barcode))
-      log_info("GDC API resolved: ", n_barcodes, "/", nrow(clinical), " UUIDs to barcodes")
+
+    # 1) Try local cache first (works offline on compute nodes)
+    cache_map <- load_uuid_barcode_cache(cfg)
+    if (length(cache_map) > 0) {
+      clinical$barcode <- unname(cache_map[clinical$uuid])
+      n_cached <- sum(!is.na(clinical$barcode))
+      log_info("UUID cache resolved: ", n_cached, "/", nrow(clinical), " samples")
+    } else {
+      log_info("UUID cache is empty/missing")
+    }
+
+    # 2) Resolve remaining UUIDs via GDC API (if network available)
+    unresolved <- unique(clinical$uuid[is.na(clinical$barcode)])
+    if (length(unresolved) > 0) {
+      gdc_map <- resolve_uuids_via_gdc_api(unresolved)
+      if (!is.null(gdc_map)) {
+        gdc_hits <- sum(!is.na(gdc_map[unresolved]))
+        log_info("GDC API resolved: ", gdc_hits, "/", length(unresolved), " unresolved UUIDs")
+
+        # Fill unresolved entries using API results
+        idx <- is.na(clinical$barcode)
+        clinical$barcode[idx] <- unname(gdc_map[clinical$uuid[idx]])
+
+        # Persist new mappings for future offline runs
+        save_uuid_barcode_cache(gdc_map, cfg)
+      } else {
+        log_warn("GDC API resolution unavailable for unresolved UUIDs")
+      }
+    }
+
+    n_barcodes <- sum(!is.na(clinical$barcode))
+    if (n_barcodes > 0) {
+      log_info("Total UUIDs resolved to TCGA IDs: ", n_barcodes, "/", nrow(clinical))
     } else {
       log_warn("GDC API resolution failed — sample IDs will remain as UUIDs")
     }

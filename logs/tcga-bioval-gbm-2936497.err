@@ -63,3 +63,21 @@ Warning: The system is configured to read the RTC time in the local time zone.
 [2026-04-13 08:47:20] INFO: --- Bootstrap stability assessment ---
 [2026-04-13 08:47:20] INFO: Bootstrap stability: 50 resamples
 [2026-04-13 08:47:20] INFO: Edge threshold: 0.5
+[2026-04-13 10:24:35] INFO: Stable edges (freq >= 0.5): 770
+[2026-04-13 10:24:35] INFO: Bootstrap strength distribution:
+[2026-04-13 10:24:35] INFO:   min: 0
+[2026-04-13 10:24:35] INFO:   median: 0.08
+[2026-04-13 10:24:35] INFO:   mean: 0.131
+[2026-04-13 10:24:35] INFO:   max: 1
+[2026-04-13 10:24:35] INFO: Saved bootstrap strengths → 05_bn_hc_bootstrap.rds (105,740 bytes)
+[2026-04-13 10:24:35] INFO: Saved averaged network → 05_bn_hc_averaged.rds (18,170 bytes)
+[2026-04-13 10:24:35] INFO: Exported 770 edges → 05_bn_hc_edge_list.csv
+[2026-04-13 10:24:35] WARN: EGFR node not found in DAG. Available nodes: ENSG00000200312.1, ENSG00000201428.1, ENSG00000252010.1, ENSG00000271394.1, ENSG00000202058.1, ENSG00000201793.1, ENSG00000263740.2, ENSG00000277775.2, ENSG00000184357.5, ENSG00000276168.1, ENSG00000129824.16, ENSG00000265735.2, ENSG00000238741.1, ENSG00000276410.4, ENSG00000212232.1, ENSG00000278705.1, ENSG00000197061.5, ENSG00000201901.1, ENSG00000277157.2, ENSG00000274618.2
+[2026-04-13 10:24:35] INFO: Wrote BN summary → 05_bn_hc_summary.txt
+[2026-04-13 10:24:35] INFO: Completed: 05 — BN Learning (bnlearn HC) (5893.6s)
+[2026-04-13 10:24:35] INFO: ------------------------------------------------------------
+[2026-04-13 10:24:35] INFO: 
+[2026-04-13 10:24:35] INFO: ============================================================
+[2026-04-13 10:24:35] INFO: Pipeline complete — 98.2 minutes
+[2026-04-13 10:24:35] INFO: ============================================================
+There were 50 or more warnings (use warnings() to see the first 50)
