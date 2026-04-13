@@ -42,9 +42,19 @@ stages <- list(
     func   = "run_feature_select"
   ),
   "05" = list(
-    name   = "BN learning (bnlearn HC)",
+    name   = "BN learning — bnlearn (HC + Tabu + MMHC)",
     script = file.path("R", "05_bn_bnlearn.R"),
     func   = "run_bn_bnlearn"
+  ),
+  "06" = list(
+    name   = "BN learning — pcalg (PC + GES)",
+    script = file.path("R", "06_bn_pcalg.R"),
+    func   = "run_bn_pcalg"
+  ),
+  "07" = list(
+    name   = "Importance network — GENIE3",
+    script = file.path("R", "07_bn_genie3.R"),
+    func   = "run_bn_genie3"
   )
 )
 

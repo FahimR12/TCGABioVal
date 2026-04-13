@@ -182,8 +182,86 @@ run_feature_select <- function(cfg) {
   writeLines(lines, out_path)
   log_info("Wrote feature selection summary → ", basename(out_path))
 
+  # Export CSV for SMC and Python-based BN methods
+  export_bn_csv(result$expr_selected, result$gene_meta, cfg)
+
   log_stage_end("04 — Feature Selection", start_time)
   invisible(result)
+}
+
+# =============================================================================
+# CSV export for SMC + external methods
+# =============================================================================
+
+#' Export BN-input expression matrix as CSV (samples × genes, gene symbols)
+#'
+#' This is the primary handoff to:
+#'   - Your SMC method (Python)
+#'   - NOTEARS / DAGMA (Python)
+#'   - Any tool that reads tabular input
+#'
+#' Output: data/processed/04_bn_input.csv
+#'   Rows    = samples (TCGA barcodes or UUIDs)
+#'   Columns = gene symbols (or Ensembl IDs where symbol unavailable)
+#'   Values  = logCPM normalised expression (continuous, not counts)
+#'
+#' @param expr_selected  genes × samples expression matrix (Ensembl ID rownames)
+#' @param gene_meta      data.frame from select_features() with gene column
+#' @param cfg            pipeline config
+export_bn_csv <- function(expr_selected, gene_meta, cfg) {
+  log_info("Exporting BN input CSV (samples × genes, gene symbols)")
+
+  # -------------------------------------------------------------------------
+  # Step 1: Map Ensembl IDs → gene symbols using gene_info from stage 01
+  # -------------------------------------------------------------------------
+  gene_info_path <- processed_path(cfg, "01_gene_info.rds")
+
+  if (file.exists(gene_info_path)) {
+    gene_info <- readRDS(gene_info_path)
+
+    # Build Ensembl → symbol lookup
+    sym_lookup <- setNames(gene_info$gene_name, gene_info$gene_id)
+
+    # Map rownames; fall back to Ensembl ID if no symbol
+    mapped_symbols <- sym_lookup[rownames(expr_selected)]
+    fallback_mask  <- is.na(mapped_symbols) | nchar(mapped_symbols) == 0
+    mapped_symbols[fallback_mask] <- rownames(expr_selected)[fallback_mask]
+
+    n_mapped   <- sum(!fallback_mask)
+    n_fallback <- sum(fallback_mask)
+    log_info("  Symbol mapping: ", n_mapped, " mapped, ",
+             n_fallback, " using Ensembl ID fallback")
+  } else {
+    log_warn("  gene_info not found — using Ensembl IDs as column names")
+    mapped_symbols <- rownames(expr_selected)
+  }
+
+  # Make column names safe (no duplicates, no spaces)
+  col_names <- make.unique(mapped_symbols, sep = "_")
+
+  # -------------------------------------------------------------------------
+  # Step 2: Transpose to samples × genes and write CSV
+  # -------------------------------------------------------------------------
+  df_out <- as.data.frame(t(expr_selected))
+  colnames(df_out) <- col_names
+
+  # Add sample ID as first column
+  df_out <- cbind(sample_id = rownames(df_out), df_out)
+
+  csv_path <- processed_path(cfg, "04_bn_input.csv")
+  write.csv(df_out, csv_path, row.names = FALSE)
+
+  file_mb <- round(file.size(csv_path) / 1e6, 2)
+  log_info("  Wrote ", nrow(df_out), " samples × ", ncol(df_out) - 1,
+           " genes → ", basename(csv_path), " (", file_mb, " MB)")
+
+  # Also write the gene metadata with symbols as a reference
+  gene_meta$symbol <- mapped_symbols[match(gene_meta$gene, rownames(expr_selected))]
+  meta_path <- processed_path(cfg, "04_selected_genes_symbols.csv")
+  write.csv(gene_meta, meta_path, row.names = FALSE)
+  log_info("  Gene reference table → ", basename(meta_path))
+
+  invisible(csv_path)
 }
 
 # =============================================================================

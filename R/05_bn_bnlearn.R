@@ -1,20 +1,26 @@
 # =============================================================================
-# 05_bn_bnlearn.R — Bayesian Network learning with bnlearn (Hill Climbing)
+# 05_bn_bnlearn.R — BN structure learning: HC, Tabu, MMHC (bnlearn)
 # =============================================================================
-# First BN method in the comparison pipeline. Learns a DAG from the
-# normalised expression matrix using bnlearn's Hill Climbing algorithm,
-# then assesses edge stability via bootstrapping.
+# Runs all three bnlearn score-based algorithms on the same expression matrix
+# so that results are directly comparable. Each algorithm:
+#   - Learns a single-run DAG
+#   - Assesses edge stability via bootstrap resampling
+#   - Extracts the EGFR 1-hop neighbourhood
+#   - Writes outputs to results/bnlearn/<algorithm>/
 #
 # Inputs:
 #   - data/processed/04_expr_bn_input.rds
 #
-# Outputs:
-#   - results/05_bn_hc_dag.rds              : learned bn object
-#   - results/05_bn_hc_bootstrap.rds        : bootstrap strength object
-#   - results/05_bn_hc_averaged.rds         : averaged network (stable edges)
-#   - results/05_bn_hc_edge_list.csv        : edge list with bootstrap freq
-#   - results/05_egfr_neighbourhood.rds     : EGFR local graph extraction
-#   - results/05_bn_hc_summary.txt
+# Outputs per algorithm (in results/bnlearn/{hc,tabu,mmhc}/):
+#   - dag.rds              : single-run learned bn object
+#   - bootstrap.rds        : boot.strength data.frame
+#   - averaged.rds         : averaged network (stable edges only)
+#   - edge_list.csv        : edges with bootstrap frequency
+#   - egfr_neighbourhood.rds
+#   - summary.txt
+#
+# Also writes:
+#   - results/bnlearn/comparison_edges.csv : edge overlap across all 3 methods
 # =============================================================================
 
 source(file.path("R", "00_utils.R"))
@@ -26,188 +32,186 @@ suppressPackageStartupMessages({
 })
 
 # =============================================================================
-# BN structure learning
+# Single algorithm runner
 # =============================================================================
 
-#' Learn a DAG using Hill Climbing
+#' Run one bnlearn algorithm end-to-end
 #'
-#' @param expr Expression matrix (genes × samples) — will be transposed
-#'   to samples × genes for bnlearn
-#' @param cfg  Pipeline config
-#' @return bn object (learned DAG)
-learn_bn_hc <- function(expr, cfg) {
-  bn_cfg <- cfg$bn_learn
-  log_info("Algorithm: ", bn_cfg$algorithm)
-  log_info("Score: ", bn_cfg$score)
-  log_info("Restarts: ", bn_cfg$restart, ", Perturb: ", bn_cfg$perturb)
+#' @param expr      genes × samples matrix (transposed internally)
+#' @param algo      algorithm id: "hc", "tabu", or "mmhc"
+#' @param cfg       pipeline config
+#' @return list(dag, boot, egfr)
+run_single_bnlearn <- function(expr, algo, cfg) {
+  bn_cfg  <- cfg$bn_learn
+  stab_cfg <- bn_cfg$stability
 
-  # bnlearn expects samples × variables
+  out_dir <- results_path(cfg, "bnlearn", algo)
+  dir.create(out_dir, recursive = TRUE, showWarnings = FALSE)
+
   data <- as.data.frame(t(expr))
 
-  # Sanitise column names — bnlearn doesn't like special characters
+  # Sanitise names — bnlearn rejects special characters
   original_names <- colnames(data)
-  safe_names <- make.names(colnames(data), unique = TRUE)
+  safe_names     <- make.names(colnames(data), unique = TRUE)
   colnames(data) <- safe_names
   name_map <- setNames(original_names, safe_names)
 
-  log_info("Learning DAG from ", nrow(data), " samples × ",
-           ncol(data), " genes")
+  log_info("[", toupper(algo), "] Learning DAG from ",
+           nrow(data), " samples × ", ncol(data), " genes")
 
-  dag <- hc(
-    data,
-    score    = bn_cfg$score,
-    restart  = bn_cfg$restart,
-    perturb  = bn_cfg$perturb,
-    max.iter = bn_cfg$max_iter
+  # -------------------------------------------------------------------------
+  # Single-run structure learning
+  # -------------------------------------------------------------------------
+  dag <- switch(algo,
+    hc = hc(
+      data,
+      score    = bn_cfg$score,
+      restart  = bn_cfg$restart,
+      perturb  = bn_cfg$perturb,
+      max.iter = bn_cfg$max_iter
+    ),
+    tabu = tabu(
+      data,
+      score    = bn_cfg$score,
+      tabu     = bn_cfg$tabu_length %||% 10L,
+      max.iter = bn_cfg$max_iter
+    ),
+    mmhc = mmhc(data),
+    stop("Unknown bnlearn algorithm: ", algo)
   )
 
   n_edges <- nrow(arcs(dag))
-  log_info("Learned DAG: ", length(nodes(dag)), " nodes, ",
-           n_edges, " edges")
+  log_info("[", toupper(algo), "] Learned DAG: ",
+           length(nodes(dag)), " nodes, ", n_edges, " edges")
 
-  # Store the name mapping as an attribute for later use
   attr(dag, "name_map") <- name_map
+  saveRDS(dag, file.path(out_dir, "dag.rds"))
 
-  dag
-}
+  # -------------------------------------------------------------------------
+  # Bootstrap stability
+  # -------------------------------------------------------------------------
+  log_info("[", toupper(algo), "] Bootstrap: ",
+           stab_cfg$n_bootstrap, " resamples")
 
-# =============================================================================
-# Bootstrap stability assessment
-# =============================================================================
-
-#' Assess edge stability via nonparametric bootstrap
-#'
-#' @param expr Expression matrix (genes × samples)
-#' @param cfg  Pipeline config
-#' @return list with:
-#'   - strength: data.frame of edge bootstrap frequencies
-#'   - averaged: bn object with only stable edges
-bootstrap_stability <- function(expr, cfg) {
-  bn_cfg <- cfg$bn_learn
-  stab_cfg <- bn_cfg$stability
-
-  data <- as.data.frame(t(expr))
-  colnames(data) <- make.names(colnames(data), unique = TRUE)
-
-  log_info("Bootstrap stability: ", stab_cfg$n_bootstrap, " resamples")
-  log_info("Edge threshold: ", stab_cfg$edge_threshold)
+  algo_args <- switch(algo,
+    hc   = list(score = bn_cfg$score, restart = bn_cfg$restart,
+                perturb = bn_cfg$perturb),
+    tabu = list(score = bn_cfg$score,
+                tabu = bn_cfg$tabu_length %||% 10L),
+    mmhc = list()
+  )
 
   boot_strength <- boot.strength(
     data,
-    R         = stab_cfg$n_bootstrap,
-    algorithm = bn_cfg$algorithm,
-    algorithm.args = list(
-      score   = bn_cfg$score,
-      restart = bn_cfg$restart,
-      perturb = bn_cfg$perturb
+    R              = stab_cfg$n_bootstrap,
+    algorithm      = algo,
+    algorithm.args = algo_args
+  )
+
+  avg_net <- averaged.network(boot_strength, threshold = stab_cfg$edge_threshold)
+  log_info("[", toupper(algo), "] Stable edges (freq >= ",
+           stab_cfg$edge_threshold, "): ", nrow(arcs(avg_net)))
+
+  saveRDS(boot_strength, file.path(out_dir, "bootstrap.rds"))
+  saveRDS(avg_net,       file.path(out_dir, "averaged.rds"))
+
+  # -------------------------------------------------------------------------
+  # Edge list CSV
+  # -------------------------------------------------------------------------
+  edge_df <- export_edge_list_bnlearn(avg_net, boot_strength, name_map,
+                                       file.path(out_dir, "edge_list.csv"))
+
+  # -------------------------------------------------------------------------
+  # EGFR neighbourhood
+  # -------------------------------------------------------------------------
+  egfr_nhd <- extract_egfr_neighbourhood(
+    avg_net,
+    hops   = cfg$validation$egfr_neighbourhood$hops,
+    name_map = name_map
+  )
+  if (!is.null(egfr_nhd)) {
+    saveRDS(egfr_nhd, file.path(out_dir, "egfr_neighbourhood.rds"))
+  }
+
+  # -------------------------------------------------------------------------
+  # Per-algorithm summary
+  # -------------------------------------------------------------------------
+  write_bnlearn_algo_summary(dag, avg_net, boot_strength, egfr_nhd,
+                              algo, stab_cfg, out_dir)
+
+  list(dag = dag, boot = boot_strength, avg = avg_net,
+       egfr = egfr_nhd, name_map = name_map, edge_df = edge_df)
+}
+
+# =============================================================================
+# Cross-method edge comparison
+# =============================================================================
+
+#' Build a long-format comparison table: which edges appear in which methods
+build_edge_comparison <- function(results_by_algo) {
+  # Collect all edges seen across any method
+  all_edges <- do.call(rbind, lapply(names(results_by_algo), function(algo) {
+    df <- results_by_algo[[algo]]$edge_df
+    if (is.null(df) || nrow(df) == 0) return(NULL)
+    # Use original (unmapped) names if available
+    from_col <- if ("from_original" %in% colnames(df)) "from_original" else "from"
+    to_col   <- if ("to_original" %in% colnames(df)) "to_original" else "to"
+    data.frame(
+      from      = df[[from_col]],
+      to        = df[[to_col]],
+      algorithm = algo,
+      strength  = df$strength %||% NA_real_,
+      stringsAsFactors = FALSE
     )
-  )
+  }))
 
-  # Averaged network — keep edges above threshold
-  avg_net <- averaged.network(boot_strength,
-                               threshold = stab_cfg$edge_threshold)
+  if (is.null(all_edges)) return(NULL)
 
-  n_stable <- nrow(arcs(avg_net))
-  log_info("Stable edges (freq >= ", stab_cfg$edge_threshold, "): ", n_stable)
+  # Pivot: one row per edge, one column per algorithm's bootstrap strength
+  edge_keys <- unique(paste(all_edges$from, "->", all_edges$to))
+  algos <- names(results_by_algo)
 
-  # Summary of bootstrap strengths
-  log_info("Bootstrap strength distribution:")
-  log_info("  min: ", signif(min(boot_strength$strength), 3))
-  log_info("  median: ", signif(median(boot_strength$strength), 3))
-  log_info("  mean: ", signif(mean(boot_strength$strength), 3))
-  log_info("  max: ", signif(max(boot_strength$strength), 3))
+  comparison <- do.call(rbind, lapply(edge_keys, function(key) {
+    parts <- strsplit(key, " -> ")[[1]]
+    row <- data.frame(from = parts[1], to = parts[2], stringsAsFactors = FALSE)
+    for (a in algos) {
+      m <- all_edges[all_edges$algorithm == a &
+                       paste(all_edges$from, "->", all_edges$to) == key, ]
+      row[[paste0("strength_", a)]] <- if (nrow(m) > 0) m$strength[1] else 0
+    }
+    row$n_methods <- sum(sapply(algos, function(a) {
+      (row[[paste0("strength_", a)]] %||% 0) >= 0.01
+    }))
+    row
+  }))
 
-  list(strength = boot_strength, averaged = avg_net)
+  # Sort: edges present in most methods first, then by HC strength
+  comparison <- comparison[order(-comparison$n_methods,
+                                  -comparison$strength_hc %||% 0), ]
+  comparison
 }
 
 # =============================================================================
-# EGFR neighbourhood extraction
-# =============================================================================
-
-#' Extract the local neighbourhood around EGFR
-#'
-#' @param dag    bn object (or averaged network)
-#' @param hops   Number of hops (1 = parents + children)
-#' @param target Node name for EGFR (auto-detected)
-#' @return list with:
-#'   - target: the EGFR node name
-#'   - parents: parent nodes
-#'   - children: child nodes
-#'   - neighbourhood: all nodes within `hops` distance
-#'   - subgraph_edges: edge list for the subgraph
-extract_egfr_neighbourhood <- function(dag, hops = 1, target = NULL) {
-  all_nodes <- nodes(dag)
-
-  # Auto-detect EGFR node (might be sanitised to EGFR or egfr etc.)
-  if (is.null(target)) {
-    target <- grep("^EGFR$", all_nodes, value = TRUE, ignore.case = TRUE)
-    if (length(target) == 0) {
-      target <- grep("EGFR", all_nodes, value = TRUE, ignore.case = TRUE)
-    }
-    if (length(target) == 0) {
-      log_warn("EGFR node not found in DAG. Available nodes: ",
-               paste(head(all_nodes, 20), collapse = ", "))
-      return(NULL)
-    }
-    target <- target[1]
-  }
-
-  log_info("Extracting neighbourhood for: ", target, " (hops = ", hops, ")")
-
-  # Get parents and children
-  parents  <- bnlearn::parents(dag, target)
-  children <- bnlearn::children(dag, target)
-
-  log_info("  Parents:  ", if (length(parents) > 0) paste(parents, collapse = ", ") else "(none)")
-  log_info("  Children: ", if (length(children) > 0) paste(children, collapse = ", ") else "(none)")
-
-  # Expand to k-hop neighbourhood if requested
-  neighbourhood <- unique(c(target, parents, children))
-  if (hops >= 2) {
-    for (h in 2:hops) {
-      new_nodes <- character()
-      for (node in neighbourhood) {
-        new_nodes <- c(new_nodes,
-                       bnlearn::parents(dag, node),
-                       bnlearn::children(dag, node))
-      }
-      neighbourhood <- unique(c(neighbourhood, new_nodes))
-    }
-    log_info("  ", hops, "-hop neighbourhood: ", length(neighbourhood), " nodes")
-  }
-
-  # Extract edges within the neighbourhood
-  all_arcs <- arcs(dag)
-  sub_arcs <- all_arcs[all_arcs[, 1] %in% neighbourhood &
-                        all_arcs[, 2] %in% neighbourhood, , drop = FALSE]
-
-  list(
-    target       = target,
-    parents      = parents,
-    children     = children,
-    neighbourhood = neighbourhood,
-    subgraph_edges = sub_arcs,
-    n_edges      = nrow(sub_arcs)
-  )
-}
-
-# =============================================================================
-# Edge list export
+# Helpers
 # =============================================================================
 
 #' Export edge list with bootstrap frequencies
-export_edge_list <- function(dag, boot_result, name_map, out_path) {
+export_edge_list_bnlearn <- function(dag, boot_result, name_map, out_path) {
+  if (nrow(arcs(dag)) == 0) {
+    log_warn("No edges in averaged network — edge list will be empty")
+    write.csv(data.frame(from = character(), to = character(),
+                          strength = numeric(), direction = numeric()),
+              out_path, row.names = FALSE)
+    return(invisible(NULL))
+  }
+
   edges <- as.data.frame(arcs(dag), stringsAsFactors = FALSE)
   colnames(edges) <- c("from", "to")
 
-  # Add bootstrap strength if available
-  if (!is.null(boot_result)) {
-    strength_df <- boot_result$strength
-    edges <- merge(edges, strength_df,
-                   by.x = c("from", "to"),
-                   by.y = c("from", "to"),
-                   all.x = TRUE)
-  }
+  # Merge bootstrap strength
+  strength_df <- as.data.frame(boot_result, stringsAsFactors = FALSE)
+  edges <- merge(edges, strength_df,
+                 by = c("from", "to"), all.x = TRUE)
 
   # Map back to original gene names
   if (!is.null(name_map)) {
@@ -215,15 +219,95 @@ export_edge_list <- function(dag, boot_result, name_map, out_path) {
     edges$to_original   <- name_map[edges$to]
   }
 
-  # Sort by strength (descending)
-  if ("strength" %in% colnames(edges)) {
-    edges <- edges[order(-edges$strength), ]
+  edges <- edges[order(-edges$strength), ]
+  write.csv(edges, out_path, row.names = FALSE)
+  log_info("  Exported ", nrow(edges), " edges → ", basename(out_path))
+  invisible(edges)
+}
+
+#' Extract the local neighbourhood around EGFR from a bnlearn DAG
+#'
+#' Works with sanitised node names by using name_map to find EGFR.
+extract_egfr_neighbourhood <- function(dag, hops = 1, target = NULL,
+                                        name_map = NULL) {
+  all_nodes <- nodes(dag)
+
+  # Find EGFR — first try safe names, then map back from original names
+  if (is.null(target)) {
+    target <- grep("^EGFR$", all_nodes, value = TRUE, ignore.case = TRUE)
+    if (length(target) == 0 && !is.null(name_map)) {
+      # Find safe name whose original is EGFR
+      egfr_safe <- names(name_map)[name_map == "EGFR"]
+      target <- intersect(egfr_safe, all_nodes)
+    }
+    if (length(target) == 0) {
+      log_warn("EGFR node not found in DAG")
+      return(NULL)
+    }
+    target <- target[1]
   }
 
-  write.csv(edges, out_path, row.names = FALSE)
-  log_info("Exported ", nrow(edges), " edges → ", basename(out_path))
+  original_target <- if (!is.null(name_map)) name_map[target] else target
+  log_info("  EGFR node: '", target, "' (original: '", original_target, "')")
 
-  edges
+  parents_nodes  <- bnlearn::parents(dag, target)
+  children_nodes <- bnlearn::children(dag, target)
+
+  neighbourhood <- unique(c(target, parents_nodes, children_nodes))
+  if (hops >= 2) {
+    for (h in seq_len(hops - 1)) {
+      new_nodes <- unlist(lapply(neighbourhood, function(n) {
+        c(bnlearn::parents(dag, n), bnlearn::children(dag, n))
+      }))
+      neighbourhood <- unique(c(neighbourhood, new_nodes))
+    }
+  }
+
+  sub_arcs <- arcs(dag)
+  sub_arcs <- sub_arcs[sub_arcs[, 1] %in% neighbourhood &
+                          sub_arcs[, 2] %in% neighbourhood, , drop = FALSE]
+
+  # Map to original names for readability
+  to_original <- function(x) {
+    if (!is.null(name_map)) name_map[x] %||% x else x
+  }
+
+  list(
+    target           = original_target,
+    parents          = to_original(parents_nodes),
+    children         = to_original(children_nodes),
+    neighbourhood    = to_original(neighbourhood),
+    subgraph_edges   = sub_arcs,
+    n_edges          = nrow(sub_arcs)
+  )
+}
+
+write_bnlearn_algo_summary <- function(dag, avg, boot, egfr, algo,
+                                        stab_cfg, out_dir) {
+  lines <- c(
+    "========================================",
+    paste0("bnlearn — ", toupper(algo)),
+    paste("Date:", Sys.time()),
+    "========================================",
+    "",
+    paste("Single-run edges:", nrow(arcs(dag))),
+    paste("Bootstrap resamples:", stab_cfg$n_bootstrap),
+    paste("Edge threshold:", stab_cfg$edge_threshold),
+    paste("Stable edges:", nrow(arcs(avg))),
+    ""
+  )
+  if (!is.null(egfr)) {
+    lines <- c(lines,
+      "--- EGFR 1-hop neighbourhood ---",
+      paste("Parents: ", paste(egfr$parents, collapse = ", ")),
+      paste("Children:", paste(egfr$children, collapse = ", ")),
+      paste("Neighbourhood size:", length(egfr$neighbourhood)),
+      paste("Subgraph edges:", egfr$n_edges)
+    )
+  } else {
+    lines <- c(lines, "EGFR: not found in DAG")
+  }
+  writeLines(lines, file.path(out_dir, "summary.txt"))
 }
 
 # =============================================================================
@@ -231,102 +315,49 @@ export_edge_list <- function(dag, boot_result, name_map, out_path) {
 # =============================================================================
 
 run_bn_bnlearn <- function(cfg) {
-  log_stage_start("05 — BN Learning (bnlearn HC)")
+  log_stage_start("05 — BN Learning (bnlearn: HC, Tabu, MMHC)")
   start_time <- Sys.time()
 
   expr <- readRDS(processed_path(cfg, "04_expr_bn_input.rds"))
+  log_info("Input: ", nrow(expr), " genes × ", ncol(expr), " samples")
 
-  # -------------------------------------------------------------------------
-  # Learn structure
-  # -------------------------------------------------------------------------
-  log_info("--- Single-run structure learning ---")
-  dag <- learn_bn_hc(expr, cfg)
-  save_output(dag, results_path(cfg, "05_bn_hc_dag.rds"), "HC DAG")
+  algorithms <- c("hc", "tabu", "mmhc")
+  results <- list()
 
-  # -------------------------------------------------------------------------
-  # Bootstrap stability
-  # -------------------------------------------------------------------------
-  log_info("--- Bootstrap stability assessment ---")
-  boot_result <- bootstrap_stability(expr, cfg)
-  save_output(boot_result$strength,
-              results_path(cfg, "05_bn_hc_bootstrap.rds"),
-              "bootstrap strengths")
-  save_output(boot_result$averaged,
-              results_path(cfg, "05_bn_hc_averaged.rds"),
-              "averaged network")
+  for (algo in algorithms) {
+    log_info("")
+    log_info(strrep("-", 50))
+    log_info("Algorithm: ", toupper(algo))
+    log_info(strrep("-", 50))
 
-  # -------------------------------------------------------------------------
-  # Export edge list
-  # -------------------------------------------------------------------------
-  name_map <- attr(dag, "name_map")
-  edge_df <- export_edge_list(
-    boot_result$averaged, boot_result,
-    name_map,
-    results_path(cfg, "05_bn_hc_edge_list.csv")
-  )
-
-  # -------------------------------------------------------------------------
-  # EGFR neighbourhood extraction
-  # -------------------------------------------------------------------------
-  egfr_nhd <- extract_egfr_neighbourhood(
-    boot_result$averaged,
-    hops = cfg$validation$egfr_neighbourhood$hops
-  )
-  if (!is.null(egfr_nhd)) {
-    save_output(egfr_nhd,
-                results_path(cfg, "05_egfr_neighbourhood.rds"),
-                "EGFR neighbourhood")
-  }
-
-  # -------------------------------------------------------------------------
-  # Summary
-  # -------------------------------------------------------------------------
-  write_bn_summary(dag, boot_result, egfr_nhd, cfg)
-
-  log_stage_end("05 — BN Learning (bnlearn HC)", start_time)
-  invisible(list(dag = dag, boot = boot_result, egfr = egfr_nhd))
-}
-
-write_bn_summary <- function(dag, boot_result, egfr_nhd, cfg) {
-  out_path <- results_path(cfg, "05_bn_hc_summary.txt")
-  avg <- boot_result$averaged
-
-  lines <- c(
-    "========================================",
-    "05_bn_bnlearn.R — Summary",
-    paste("Date:", Sys.time()),
-    "========================================",
-    "",
-    "Algorithm: Hill Climbing (bnlearn::hc)",
-    paste("Score:", cfg$bn_learn$score),
-    paste("Restarts:", cfg$bn_learn$restart),
-    "",
-    "--- Single-run DAG ---",
-    paste("Nodes:", length(nodes(dag))),
-    paste("Edges:", nrow(arcs(dag))),
-    "",
-    "--- Averaged Network (bootstrap) ---",
-    paste("Bootstrap resamples:", cfg$bn_learn$stability$n_bootstrap),
-    paste("Edge threshold:", cfg$bn_learn$stability$edge_threshold),
-    paste("Stable edges:", nrow(arcs(avg))),
-    ""
-  )
-
-  if (!is.null(egfr_nhd)) {
-    lines <- c(lines,
-      "--- EGFR Neighbourhood ---",
-      paste("Target node:", egfr_nhd$target),
-      paste("Parents:", paste(egfr_nhd$parents, collapse = ", ")),
-      paste("Children:", paste(egfr_nhd$children, collapse = ", ")),
-      paste("1-hop neighbourhood size:", length(egfr_nhd$neighbourhood)),
-      paste("Subgraph edges:", egfr_nhd$n_edges)
+    results[[algo]] <- tryCatch(
+      run_single_bnlearn(expr, algo, cfg),
+      error = function(e) {
+        log_error("Algorithm ", toupper(algo), " failed: ", conditionMessage(e))
+        NULL
+      }
     )
-  } else {
-    lines <- c(lines, "EGFR neighbourhood: NOT FOUND IN DAG")
   }
 
-  writeLines(lines, out_path)
-  log_info("Wrote BN summary → ", basename(out_path))
+  # Cross-method edge comparison
+  valid_results <- Filter(Negate(is.null), results)
+  if (length(valid_results) > 1) {
+    comparison <- build_edge_comparison(valid_results)
+    if (!is.null(comparison)) {
+      comp_path <- results_path(cfg, "bnlearn", "comparison_edges.csv")
+      dir.create(dirname(comp_path), recursive = TRUE, showWarnings = FALSE)
+      write.csv(comparison, comp_path, row.names = FALSE)
+      log_info("Edge comparison table → ", basename(comp_path),
+               " (", nrow(comparison), " unique edges)")
+
+      # Log edges agreed on by all methods
+      n_agree_all <- sum(comparison$n_methods == length(valid_results))
+      log_info("Edges in ALL ", length(valid_results), " methods: ", n_agree_all)
+    }
+  }
+
+  log_stage_end("05 — BN Learning (bnlearn)", start_time)
+  invisible(results)
 }
 
 # =============================================================================

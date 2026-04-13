@@ -181,11 +181,14 @@ feature_selection:
 # 7. Bayesian Network Learning — bnlearn (Phase 1 method)
 # ---------------------------------------------------------------------------
 bn_learn:
-  algorithm: "hc"          # Hill Climbing (alternatives: "tabu", "mmhc")
+  algorithm: "hc"          # Default algorithm (run_bn_bnlearn runs all three)
   score: "bic-g"           # Gaussian BIC (continuous data)
-  restart: 50              # Number of random restarts
-  perturb: 5               # Edges to perturb per restart
+  restart: 50              # Number of random restarts (HC, MMHC)
+  perturb: 5               # Edges to perturb per restart (HC)
   max_iter: 5000           # Max iterations per restart
+  tabu_length: 10          # Tabu list length (Tabu search)
+  pc_alpha: 0.01           # Significance level for PC conditional independence tests
+  genie3_n_trees: 500      # Trees per gene in GENIE3 (reduce to 100 for fast testing)
 
   # Stability assessment
   stability:
