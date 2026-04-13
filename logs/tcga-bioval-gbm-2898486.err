@@ -1,0 +1,180 @@
+[config] TCGABIOVAL_GDCDATA_ROOT override: /users/frazai/fastscratch/BNPipeline/GDCdata
+ 
+Warning: The system is configured to read the RTC time in the local time zone.
+         This mode cannot be fully supported. It will create various problems
+         with time zone changes and daylight saving time adjustments. The RTC
+         time is never updated, it relies on external facilities to maintain it.
+         If at all possible, use RTC in UTC by calling
+         'timedatectl set-local-rtc 0'.
+[2026-04-12 21:52:15] INFO: ============================================================
+[2026-04-12 21:52:16] INFO: TCGABioVal Pipeline
+[2026-04-12 21:52:16] INFO: Cohort: TCGA-GBM
+[2026-04-12 21:52:16] INFO: Stages: 01
+[2026-04-12 21:52:16] INFO: ============================================================
+[2026-04-12 21:52:16] INFO: 
+[2026-04-12 21:52:16] INFO: >>> Stage 01: Ingest TCGA data
+[2026-04-12 21:52:22] INFO: ============================================================
+[2026-04-12 21:52:22] INFO: Starting: 01 — Ingest TCGA data
+[2026-04-12 21:52:22] INFO: ============================================================
+[2026-04-12 21:52:22] INFO: Project:    TCGA-GBM
+[2026-04-12 21:52:22] INFO: GDCdata:    /users/frazai/fastscratch/BNPipeline/GDCdata
+[2026-04-12 21:52:22] INFO: Cohort dir: /users/frazai/fastscratch/BNPipeline/GDCdata/TCGA-GBM
+[2026-04-12 21:52:25] INFO: Approach 1 (saved SE): no .rds/.rda files found
+[2026-04-12 21:52:25] INFO: Approach 2 (TCGAbiolinks): skipped (skip_network_approaches = true)
+[2026-04-12 21:52:25] INFO: Approach 3: scanning for RNA-seq count files
+[2026-04-12 21:52:25] INFO:   Scoping search to: /users/frazai/fastscratch/BNPipeline/GDCdata/TCGA-GBM/Transcriptome_Profiling/Gene_Expression_Quantification
+[2026-04-12 21:52:25] INFO:   Top-level subdirectories (first 5): 00426c02-8fec-4862-92e6-876a81533b9e, 006aabaf-a659-436d-baed-f59795f934cf, 00cce172-4b2b-4cb5-b6dd-47c9627972af, 0237d4e6-241d-4fb5-a59b-078bd4bd4b2d, 03fc636b-9e3d-42ea-88cf-8081539a9859
+[2026-04-12 21:52:26] INFO:   Found 372 candidate files — validating format
+[2026-04-12 21:52:26] INFO:   Validated 372 count files, format: star
+[2026-04-12 21:52:26] INFO:   Unique samples (UUIDs): 372
+[2026-04-12 21:52:26] INFO: Reading STAR count files (GDC Harmonized format)
+[2026-04-12 21:52:41] INFO:   Reading file 50/372
+[2026-04-12 21:52:55] INFO:   Reading file 100/372
+[2026-04-12 21:53:09] INFO:   Reading file 150/372
+[2026-04-12 21:53:23] INFO:   Reading file 200/372
+[2026-04-12 21:53:38] INFO:   Reading file 250/372
+[2026-04-12 21:53:51] INFO:   Reading file 300/372
+[2026-04-12 21:54:06] INFO:   Reading file 350/372
+[2026-04-12 21:54:12] INFO: Assembled count matrix: 60660 genes × 372 samples
+[2026-04-12 21:54:12] INFO: No TCGA barcodes in filenames — using UUIDs as sample IDs
+[2026-04-12 21:54:12] WARN: No clinical TSV found in GDCdata — IDH status and full metadata will not be available. Consider adding clinical data at: /users/frazai/fastscratch/BNPipeline/GDCdata/TCGA-GBM/Clinical
+[2026-04-12 21:54:12] WARN: No sample_type column found in clinical data — skipping sample type filter. Available columns: uuid, file_path, barcode
+[2026-04-12 21:54:16] INFO: Saved raw count matrix → 01_raw_counts.rds (27,166,924 bytes)
+[2026-04-12 21:54:16] INFO: Saved clinical metadata → 01_clinical.rds (23,249 bytes)
+[2026-04-12 21:54:16] INFO: Saved gene info → 01_gene_info.rds (526,859 bytes)
+[2026-04-12 21:54:16] INFO: Wrote ingest summary → 01_ingest_summary.txt
+[2026-04-12 21:54:16] INFO: Completed: 01 — Ingest (113.5s)
+[2026-04-12 21:54:16] INFO: ------------------------------------------------------------
+[2026-04-12 21:54:16] INFO: 
+[2026-04-12 21:54:16] INFO: ============================================================
+[2026-04-12 21:54:16] INFO: Pipeline complete — 2 minutes
+[2026-04-12 21:54:16] INFO: ============================================================
+[config] TCGABIOVAL_GDCDATA_ROOT override: /users/frazai/fastscratch/BNPipeline/GDCdata
+ 
+Warning: The system is configured to read the RTC time in the local time zone.
+         This mode cannot be fully supported. It will create various problems
+         with time zone changes and daylight saving time adjustments. The RTC
+         time is never updated, it relies on external facilities to maintain it.
+         If at all possible, use RTC in UTC by calling
+         'timedatectl set-local-rtc 0'.
+[2026-04-12 21:54:16] INFO: ============================================================
+[2026-04-12 21:54:16] INFO: TCGABioVal Pipeline
+[2026-04-12 21:54:16] INFO: Cohort: TCGA-GBM
+[2026-04-12 21:54:16] INFO: Stages: 02
+[2026-04-12 21:54:16] INFO: ============================================================
+[2026-04-12 21:54:16] INFO: 
+[2026-04-12 21:54:16] INFO: >>> Stage 02: Sample QC
+[2026-04-12 21:54:16] INFO: ============================================================
+[2026-04-12 21:54:16] INFO: Starting: 02 — Sample QC
+[2026-04-12 21:54:16] INFO: ============================================================
+[2026-04-12 21:54:17] INFO: Computing per-sample QC metrics
+[2026-04-12 21:54:17] INFO: Input: 60660 genes × 372 samples
+[2026-04-12 21:54:17] INFO: Identified 37 mitochondrial genes
+[2026-04-12 21:54:17] INFO: Flagging outliers (MAD threshold = 3)
+[2026-04-12 21:54:17] INFO:   library_size: median = 47960000, MAD = 8767000, threshold < 21660000, flagged = 13
+[2026-04-12 21:54:17] INFO:   pct_mito: median = 0.5266, MAD = 0.5071, threshold > 2.048, flagged = 141
+[2026-04-12 21:54:17] INFO:   n_detected: median = 37550, MAD = 5500, threshold < 21050, flagged = 0
+[2026-04-12 21:54:17] INFO: Total samples flagged (any metric): 142 / 372
+[2026-04-12 21:54:17] INFO: Saved QC metrics + flags → 02_qc_metrics.rds (16,254 bytes)
+[2026-04-12 21:54:17] INFO: Saved QC thresholds → 02_qc_thresholds.rds (323 bytes)
+[2026-04-12 21:54:17] INFO: Generating QC diagnostic plots
+[2026-04-12 21:54:17] INFO: Saved QC plots → 02_qc_diagnostic_plots.pdf
+[2026-04-12 21:54:17] INFO: Wrote QC summary → 02_qc_summary.txt
+[2026-04-12 21:54:17] INFO: Completed: 02 — Sample QC (0.7s)
+[2026-04-12 21:54:17] INFO: ------------------------------------------------------------
+[2026-04-12 21:54:17] INFO: 
+[2026-04-12 21:54:17] INFO: ============================================================
+[2026-04-12 21:54:17] INFO: Pipeline complete — 0 minutes
+[2026-04-12 21:54:17] INFO: ============================================================
+[config] TCGABIOVAL_GDCDATA_ROOT override: /users/frazai/fastscratch/BNPipeline/GDCdata
+ 
+Warning: The system is configured to read the RTC time in the local time zone.
+         This mode cannot be fully supported. It will create various problems
+         with time zone changes and daylight saving time adjustments. The RTC
+         time is never updated, it relies on external facilities to maintain it.
+         If at all possible, use RTC in UTC by calling
+         'timedatectl set-local-rtc 0'.
+[2026-04-12 21:54:17] INFO: ============================================================
+[2026-04-12 21:54:17] INFO: TCGABioVal Pipeline
+[2026-04-12 21:54:17] INFO: Cohort: TCGA-GBM
+[2026-04-12 21:54:17] INFO: Stages: 03
+[2026-04-12 21:54:17] INFO: ============================================================
+[2026-04-12 21:54:17] INFO: 
+[2026-04-12 21:54:17] INFO: >>> Stage 03: Normalise + IDH covariate
+[2026-04-12 21:54:18] INFO: ============================================================
+[2026-04-12 21:54:18] INFO: Starting: 03 — Normalise
+[2026-04-12 21:54:18] INFO: ============================================================
+[2026-04-12 21:54:18] INFO: Proceeding with 372 samples (flagged samples retained)
+[2026-04-12 21:54:18] INFO: Gene filter: CPM >= 1 in >= 20% of samples (n >= 75)
+[2026-04-12 21:54:18] INFO: Genes: 60660 → 20352 (removed 40308 low-expression genes)
+[2026-04-12 21:54:18] INFO: Normalisation method: TMM
+[2026-04-12 21:54:18] INFO: Transform: logCPM
+[2026-04-12 21:54:24] INFO: Norm factors — range: [0.625, 1.47], median: 0.996
+[2026-04-12 21:54:24] INFO: logCPM: prior.count = 1
+[2026-04-12 21:54:24] INFO: Expression matrix: 20352 genes × 372 samples
+[2026-04-12 21:54:24] INFO: Parsing IDH mutation status
+[2026-04-12 21:54:24] WARN: No IDH status column found in clinical data. Tried: paper_IDH.status, subtype_IDH.status, paper_IDH_status, IDH.status
+[2026-04-12 21:54:25] WARN: Available columns: uuid, file_path, barcode
+[2026-04-12 21:54:26] INFO: Saved normalised expression → 03_expr_normalised.rds (32,094,805 bytes)
+[2026-04-12 21:54:26] INFO: Saved clinical metadata (final) → 03_clinical_final.rds (23,524 bytes)
+[2026-04-12 21:54:26] INFO: Saved DGEList object → 03_dge_object.rds (15,525,794 bytes)
+[2026-04-12 21:54:26] INFO: Wrote normalisation summary → 03_normalise_summary.txt
+[2026-04-12 21:54:26] INFO: Completed: 03 — Normalise (8.9s)
+[2026-04-12 21:54:26] INFO: ------------------------------------------------------------
+[2026-04-12 21:54:26] INFO: 
+[2026-04-12 21:54:26] INFO: ============================================================
+[2026-04-12 21:54:26] INFO: Pipeline complete — 0.2 minutes
+[2026-04-12 21:54:26] INFO: ============================================================
+[config] TCGABIOVAL_GDCDATA_ROOT override: /users/frazai/fastscratch/BNPipeline/GDCdata
+ 
+Warning: The system is configured to read the RTC time in the local time zone.
+         This mode cannot be fully supported. It will create various problems
+         with time zone changes and daylight saving time adjustments. The RTC
+         time is never updated, it relies on external facilities to maintain it.
+         If at all possible, use RTC in UTC by calling
+         'timedatectl set-local-rtc 0'.
+[2026-04-12 21:54:27] INFO: ============================================================
+[2026-04-12 21:54:27] INFO: TCGABioVal Pipeline
+[2026-04-12 21:54:27] INFO: Cohort: TCGA-GBM
+[2026-04-12 21:54:27] INFO: Stages: 04
+[2026-04-12 21:54:27] INFO: ============================================================
+[2026-04-12 21:54:27] INFO: 
+[2026-04-12 21:54:27] INFO: >>> Stage 04: Feature selection
+[2026-04-12 21:54:27] INFO: ============================================================
+[2026-04-12 21:54:27] INFO: Starting: 04 — Feature Selection
+[2026-04-12 21:54:27] INFO: ============================================================
+[2026-04-12 21:54:27] INFO: Feature selection strategy: variance_plus_pathway
+[2026-04-12 21:54:27] INFO: Gene variance — range: [0.0557, 35.5], median: 0.787
+[2026-04-12 21:54:27] INFO: Top 150 variance genes selected
+[2026-04-12 21:54:27] INFO: Rownames appear to be Ensembl IDs — will need gene_info for symbol mapping
+[2026-04-12 21:54:27] INFO: EGFR gene set: 37 symbols → 37 mapped to Ensembl IDs in data
+[2026-04-12 21:54:27] INFO: Final gene set: 187 genes (37 from EGFR reference)
+[2026-04-12 21:54:27] INFO: Saved BN input expression matrix → 04_expr_bn_input.rds (424,332 bytes)
+[2026-04-12 21:54:27] INFO: Saved gene selection metadata → 04_selected_genes.rds (3,450 bytes)
+[2026-04-12 21:54:27] INFO: Wrote feature selection summary → 04_feature_select_summary.txt
+[2026-04-12 21:54:27] INFO: Completed: 04 — Feature Selection (0.6s)
+[2026-04-12 21:54:27] INFO: ------------------------------------------------------------
+[2026-04-12 21:54:27] INFO: 
+[2026-04-12 21:54:27] INFO: ============================================================
+[2026-04-12 21:54:27] INFO: Pipeline complete — 0 minutes
+[2026-04-12 21:54:27] INFO: ============================================================
+[config] TCGABIOVAL_GDCDATA_ROOT override: /users/frazai/fastscratch/BNPipeline/GDCdata
+ 
+Warning: The system is configured to read the RTC time in the local time zone.
+         This mode cannot be fully supported. It will create various problems
+         with time zone changes and daylight saving time adjustments. The RTC
+         time is never updated, it relies on external facilities to maintain it.
+         If at all possible, use RTC in UTC by calling
+         'timedatectl set-local-rtc 0'.
+[2026-04-12 21:54:28] INFO: ============================================================
+[2026-04-12 21:54:28] INFO: TCGABioVal Pipeline
+[2026-04-12 21:54:28] INFO: Cohort: TCGA-GBM
+[2026-04-12 21:54:28] INFO: Stages: 05
+[2026-04-12 21:54:28] INFO: ============================================================
+[2026-04-12 21:54:28] INFO: 
+[2026-04-12 21:54:28] INFO: >>> Stage 05: BN learning (bnlearn HC)
+Error in check_packages(c("bnlearn")) : 
+  Missing required packages: bnlearn
+Install with: install.packages(c('bnlearn'))
+Calls: main ... source -> withVisible -> eval -> eval -> check_packages
+Execution halted

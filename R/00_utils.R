@@ -32,7 +32,7 @@ load_config <- function(config_path = NULL) {
     "Config file not found" = file.exists(config_path)
   )
   cfg <- yaml::read_yaml(config_path)
-  validate_config(cfg)
+  cfg <- validate_config(cfg)
   cfg
 }
 

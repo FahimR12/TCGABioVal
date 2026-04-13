@@ -1,0 +1,23 @@
+[pipeline] job=2898486 run_id=20260412_215215 config=config/config.yml
+[pipeline] gdcdata=/users/frazai/fastscratch/BNPipeline/GDCdata
+[pipeline] host=node002.barkla2.liv.alces.network cpus=8
+[pipeline] mode: full pipeline — running: 01 02 03 04 05
+
+[pipeline] ── Stage 01: Ingest STAR count files ────────────────────────────────────────
+[pipeline] start: 2026-04-12 21:52:15
+[pipeline] done:  Stage 01 in 2m1s
+
+[pipeline] ── Stage 02: Sample QC (MAD-based flagging) ────────────────────────────────────────
+[pipeline] start: 2026-04-12 21:54:16
+[pipeline] done:  Stage 02 in 0m1s
+
+[pipeline] ── Stage 03: Normalise + IDH covariate ────────────────────────────────────────
+[pipeline] start: 2026-04-12 21:54:17
+[pipeline] done:  Stage 03 in 0m10s
+
+[pipeline] ── Stage 04: Feature selection (variance + EGFR) ────────────────────────────────────────
+[pipeline] start: 2026-04-12 21:54:27
+[pipeline] done:  Stage 04 in 0m0s
+
+[pipeline] ── Stage 05: BN learning — bnlearn Hill Climbing + bootstrap ────────────────────────────────────────
+[pipeline] start: 2026-04-12 21:54:27

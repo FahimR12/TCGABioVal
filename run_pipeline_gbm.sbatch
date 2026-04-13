@@ -48,6 +48,11 @@ module load r/4.5.2-gcc14.2.0
 # source /users/frazai/.bashrc
 # conda activate smc_r_env
 
+# User library path for R packages (keeps installs out of system module tree)
+export R_LIBS_USER="${R_LIBS_USER:-/users/frazai/fastscratch/TCGABioVal/.r_libs}"
+mkdir -p "${R_LIBS_USER}"
+export CRAN_MIRROR="${CRAN_MIRROR:-https://cloud.r-project.org}"
+
 # Prevent nested parallelism from over-subscribing cores
 export OMP_NUM_THREADS=1
 export OPENBLAS_NUM_THREADS=1
@@ -105,6 +110,70 @@ elif [[ -n "${SKIP_INGEST:-}" ]]; then
 else
   STAGES="01 02 03 04 05"
   echo "[pipeline] mode: full pipeline — running: ${STAGES}"
+fi
+
+# =============================================================================
+# R package preflight (stage-aware)
+# =============================================================================
+# Checks package availability before running expensive stages.
+# Set AUTO_INSTALL_R_PKGS=1 to auto-install missing packages into R_LIBS_USER.
+REQUIRED_PKGS=()
+for stage in $STAGES; do
+  case "$stage" in
+    01) REQUIRED_PKGS+=(SummarizedExperiment TCGAbiolinks GenomicRanges) ;;
+    02) REQUIRED_PKGS+=(matrixStats) ;;
+    03) REQUIRED_PKGS+=(edgeR limma) ;;
+    05) REQUIRED_PKGS+=(bnlearn) ;;
+  esac
+done
+
+# De-duplicate while preserving one-per-line output
+if [[ ${#REQUIRED_PKGS[@]} -gt 0 ]]; then
+  mapfile -t REQUIRED_PKGS < <(printf '%s\n' "${REQUIRED_PKGS[@]}" | awk '!seen[$0]++')
+fi
+
+if [[ ${#REQUIRED_PKGS[@]} -gt 0 ]]; then
+  echo "[pipeline] checking R packages: ${REQUIRED_PKGS[*]}"
+  MISSING_PKGS="$(
+    Rscript - "${REQUIRED_PKGS[@]}" <<'RSCRIPT'
+args <- commandArgs(trailingOnly = TRUE)
+missing <- args[!vapply(args, requireNamespace, FUN.VALUE = logical(1), quietly = TRUE)]
+cat(paste(missing, collapse = " "))
+RSCRIPT
+  )"
+
+  if [[ -n "${MISSING_PKGS}" ]]; then
+    echo "[pipeline] missing R packages: ${MISSING_PKGS}"
+
+    if [[ "${AUTO_INSTALL_R_PKGS:-0}" == "1" ]]; then
+      echo "[pipeline] AUTO_INSTALL_R_PKGS=1 — attempting install to ${R_LIBS_USER}"
+      Rscript - "${MISSING_PKGS}" <<'RSCRIPT'
+args <- commandArgs(trailingOnly = TRUE)
+pkgs <- strsplit(args[[1]], "\\s+")[[1]]
+pkgs <- pkgs[nzchar(pkgs)]
+repos <- Sys.getenv("CRAN_MIRROR", "https://cloud.r-project.org")
+install.packages(pkgs, repos = repos)
+RSCRIPT
+      REMAINING_MISSING="$(
+        Rscript - "${REQUIRED_PKGS[@]}" <<'RSCRIPT'
+args <- commandArgs(trailingOnly = TRUE)
+missing <- args[!vapply(args, requireNamespace, FUN.VALUE = logical(1), quietly = TRUE)]
+cat(paste(missing, collapse = " "))
+RSCRIPT
+      )"
+      if [[ -n "${REMAINING_MISSING}" ]]; then
+        echo "[pipeline] ERROR: package install attempted, but still missing: ${REMAINING_MISSING}"
+        exit 2
+      fi
+    else
+      MANUAL_INSTALL="$(printf "'%s'," ${MISSING_PKGS})"
+      MANUAL_INSTALL="c(${MANUAL_INSTALL%,})"
+      echo "[pipeline] ERROR: required R packages are missing."
+      echo "[pipeline] Re-run with AUTO_INSTALL_R_PKGS=1 to install automatically,"
+      echo "[pipeline] or install manually in R, e.g. install.packages(${MANUAL_INSTALL})"
+      exit 2
+    fi
+  fi
 fi
 
 # =============================================================================
