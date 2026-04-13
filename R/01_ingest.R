@@ -418,6 +418,89 @@ read_htseq_counts <- function(files) {
 # Clinical data augmentation
 # =============================================================================
 
+# =============================================================================
+# GDC API UUID resolution
+# =============================================================================
+
+#' Resolve file UUIDs to TCGA case barcodes via the GDC REST API
+#'
+#' Sends a batch POST request to https://api.gdc.cancer.gov/files.
+#' Returns a named character vector: file_uuid -> case_submitter_id
+#' (e.g. "TCGA-02-0003").
+#'
+#' Returns NULL silently if httr/jsonlite are not installed or if the
+#' network is unavailable. The caller should fall back to UUIDs in that case.
+#'
+#' @param uuids  Character vector of GDC file UUIDs
+#' @return Named character vector or NULL
+resolve_uuids_via_gdc_api <- function(uuids) {
+  if (!requireNamespace("httr",     quietly = TRUE) ||
+      !requireNamespace("jsonlite", quietly = TRUE)) {
+    log_warn("  httr/jsonlite not installed — skipping GDC API UUID resolution")
+    return(NULL)
+  }
+
+  log_info("  Querying GDC API for ", length(uuids), " file UUIDs ...")
+
+  body <- list(
+    filters = list(
+      op      = "in",
+      content = list(field = "file_id", value = as.list(uuids))
+    ),
+    fields = "file_id,cases.submitter_id",
+    size   = length(uuids) + 10
+  )
+
+  resp <- tryCatch({
+    httr::POST(
+      "https://api.gdc.cancer.gov/files",
+      httr::content_type_json(),
+      body    = jsonlite::toJSON(body, auto_unbox = TRUE),
+      httr::timeout(45)
+    )
+  }, error = function(e) {
+    log_warn("  GDC API request error: ", conditionMessage(e))
+    NULL
+  })
+
+  if (is.null(resp)) return(NULL)
+
+  if (httr::http_error(resp)) {
+    log_warn("  GDC API HTTP error: ", httr::status_code(resp))
+    return(NULL)
+  }
+
+  raw_content <- httr::content(resp, as = "text", encoding = "UTF-8")
+  parsed <- tryCatch(
+    jsonlite::fromJSON(raw_content, flatten = TRUE),
+    error = function(e) {
+      log_warn("  GDC API JSON parse error: ", conditionMessage(e))
+      NULL
+    }
+  )
+  if (is.null(parsed)) return(NULL)
+
+  hits <- parsed$data$hits
+  if (is.null(hits) || nrow(hits) == 0) {
+    log_warn("  GDC API returned 0 hits")
+    return(NULL)
+  }
+
+  # cases.submitter_id is a list column when >1 case per file (rare for GBM)
+  file_ids <- hits$file_id
+  case_ids <- if ("cases.submitter_id" %in% colnames(hits)) {
+    vapply(hits$cases.submitter_id, function(x) {
+      if (is.null(x) || length(x) == 0) NA_character_
+      else as.character(x[[1]][1])
+    }, character(1))
+  } else {
+    rep(NA_character_, nrow(hits))
+  }
+
+  lookup <- setNames(case_ids, file_ids)
+  lookup
+}
+
 #' Augment the minimal clinical stub (uuid + file_path) with real TCGA metadata.
 #'
 #' Strategy:
@@ -451,8 +534,17 @@ augment_clinical <- function(result, cohort_dir, gdc_root, cfg = NULL) {
              nrow(clinical), " samples")
     clinical$barcode <- ifelse(nchar(barcode_match) > 0, barcode_match, NA_character_)
   } else {
-    log_info("No TCGA barcodes in filenames — using UUIDs as sample IDs")
+    log_info("No TCGA barcodes in filenames — trying GDC API UUID resolution")
     clinical$barcode <- NA_character_
+    # Attempt to resolve file UUIDs to TCGA barcodes via the GDC REST API
+    gdc_map <- resolve_uuids_via_gdc_api(clinical$uuid)
+    if (!is.null(gdc_map)) {
+      clinical$barcode <- gdc_map[clinical$uuid]
+      n_barcodes <- sum(!is.na(clinical$barcode))
+      log_info("GDC API resolved: ", n_barcodes, "/", nrow(clinical), " UUIDs to barcodes")
+    } else {
+      log_warn("GDC API resolution failed — sample IDs will remain as UUIDs")
+    }
   }
 
   # -------------------------------------------------------------------------

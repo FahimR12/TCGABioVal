@@ -245,8 +245,24 @@ export_bn_csv <- function(expr_selected, gene_meta, cfg) {
   df_out <- as.data.frame(t(expr_selected))
   colnames(df_out) <- col_names
 
-  # Add sample ID as first column
-  df_out <- cbind(sample_id = rownames(df_out), df_out)
+  # Build patient_id column from sample names.
+  # After GDC API resolution in stage 01, colnames are full TCGA aliquot
+  # barcodes (e.g. TCGA-02-0003-01A-01R-0177-01).  Truncate to 12 chars
+  # to get the patient-level ID (TCGA-02-0003) matching bn_ready_matrix.csv.
+  # If names are still UUIDs (API unavailable), keep them unchanged.
+  sample_names <- rownames(df_out)
+  patient_ids <- ifelse(
+    grepl("^TCGA-", sample_names),
+    substr(sample_names, 1, 12),
+    sample_names   # UUID fallback — stage 01 API resolution did not run
+  )
+  n_truncated <- sum(grepl("^TCGA-", sample_names))
+  if (n_truncated > 0) {
+    log_info("  Converted ", n_truncated, " aliquot barcodes → 12-char patient IDs")
+  } else {
+    log_warn("  Sample names are UUIDs — re-run stage 01 to resolve to TCGA barcodes")
+  }
+  df_out <- cbind(patient_id = patient_ids, df_out)
 
   csv_path <- processed_path(cfg, "04_bn_input.csv")
   write.csv(df_out, csv_path, row.names = FALSE)
